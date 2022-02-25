@@ -1,1 +1,1 @@
-PINN handson.
+PINN handson with PyTorch.
