@@ -1,6 +1,6 @@
+## 求解: y' = y , y(0) = 1 , 解为:y=e^x
 import torch
 import torch.nn as nn
-import numpy as np
 import matplotlib.pyplot as plt
 
 class FNN(nn.Module):
@@ -19,8 +19,7 @@ class FNN(nn.Module):
 
 if __name__ == '__main__': 
     x = torch.linspace(0, 2, 1000, requires_grad=True).unsqueeze(-1)
-    # print(x)
-    # print(x.shape)
+    # x = torch.autograd.Variable(x, requires_grad=True)
     y = torch.exp(x)
 
     layer_sizes = [1] + [128] * 4 + [1]
@@ -35,7 +34,8 @@ if __name__ == '__main__':
     for steps in range(epochs):
         y_0 = fnn(torch.zeros(1))
         y_hat = fnn(x)
-        dy_x=torch.autograd.grad(y_hat, x, grad_outputs=torch.ones_like(fnn(x)), create_graph=True)[0]
+        dy_x = torch.autograd.functional.hessian(y_hat, x, create_graph=True)[0]
+        # dy_x = torch.autograd.grad(y_hat, x, grad_outputs=torch.ones_like(y_hat), create_graph=True)[0]
         loss_1 = loss_fn(y_hat, dy_x)
         loss_2 = loss_fn(y_0, torch.ones(1))
         loss = loss_1 + loss_2
@@ -56,5 +56,11 @@ if __name__ == '__main__':
 
     plt.ioff()
     plt.show()
-    
-    
+    y_1 = fnn(torch.ones(1))
+    print(f'y_1:{y_1}')
+    y2 = fnn(x)
+    plt.plot(x.detach().numpy(), y.detach().numpy(), c='red', label='True')
+    plt.plot(x.detach().numpy(), y2.detach().numpy(), c='blue', label='Pred')
+    plt.legend(loc='best')
+ 
+    plt.show()
