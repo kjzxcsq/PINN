@@ -3,40 +3,39 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
-class FNN(nn.Module):
+class FNN(torch.nn.Module):
     def __init__(self, layer_sizes):
         super(FNN, self).__init__()
-        self.linears = nn.ModuleList()
+        self.linears = torch.nn.ModuleList()
         for i in range(1, len(layer_sizes)):
-            self.linears.append(nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
+            self.linears.append(torch.nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
 
     def forward(self, x):
         for linear in self.linears[:-1]:
-            x = nn.functional.relu(linear(x))
+            x = torch.tanh(linear(x))
         x = self.linears[-1](x)
         return x
-
 
 if __name__ == '__main__': 
     x = torch.linspace(0, 2, 1000, requires_grad=True).unsqueeze(-1)
     # x = torch.autograd.Variable(x, requires_grad=True)
     y = torch.exp(x)
 
-    layer_sizes = [1] + [128] * 4 + [1]
     lr = 1e-4
     epochs=10000
+    layer_sizes = [1] + [128] * 4 + [1]
     
-    fnn = FNN(layer_sizes)
+    net = FNN(layer_sizes)
     loss_fn=nn.MSELoss(reduction='mean')
-    optimizer = torch.optim.Adam(fnn.parameters(), lr)
+    optimizer = torch.optim.Adam(net.parameters(), lr)
 
     plt.ion()
     for steps in range(epochs):
-        y_0 = fnn(torch.zeros(1))
-        y_hat = fnn(x)
-        dy_x = torch.autograd.functional.hessian(y_hat, x, create_graph=True)[0]
-        # dy_x = torch.autograd.grad(y_hat, x, grad_outputs=torch.ones_like(y_hat), create_graph=True)[0]
-        loss_1 = loss_fn(y_hat, dy_x)
+        y_0 = net(torch.zeros(1))
+        y_hat = net(x)
+        dy_x = torch.autograd.grad(y_hat, x, grad_outputs=torch.ones(y_hat.shape), create_graph=True)[0]
+        dy_xx = torch.autograd.grad(dy_x, x, grad_outputs=torch.ones(dy_x.shape), create_graph=True)[0]
+        loss_1 = loss_fn(y_hat, dy_xx)
         loss_2 = loss_fn(y_0, torch.ones(1))
         loss = loss_1 + loss_2
         if steps % 100 == 0:
@@ -56,9 +55,9 @@ if __name__ == '__main__':
 
     plt.ioff()
     plt.show()
-    y_1 = fnn(torch.ones(1))
+    y_1 = net(torch.ones(1))
     print(f'y_1:{y_1}')
-    y2 = fnn(x)
+    y2 = net(x)
     plt.plot(x.detach().numpy(), y.detach().numpy(), c='red', label='True')
     plt.plot(x.detach().numpy(), y2.detach().numpy(), c='blue', label='Pred')
     plt.legend(loc='best')
