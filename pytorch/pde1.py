@@ -102,7 +102,7 @@ if __name__ == '__main__':
     ax.set_xlabel('t')
     ax.set_ylabel('x')
     ax.set_zlabel('u')
-    plt.savefig('./pytorch/Preddata.png')
+    plt.savefig('./pytorch/pde1_pred.png')
     plt.close(fig)
     # plot the exact solution
     fig = plt.figure()
@@ -112,5 +112,5 @@ if __name__ == '__main__':
     ax.set_xlabel('t')
     ax.set_ylabel('x')
     ax.set_zlabel('u')
-    plt.savefig('./pytorch/Turedata.png')
+    plt.savefig('./pytorch/pde1_true.png')
     plt.close(fig)
