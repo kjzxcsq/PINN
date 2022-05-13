@@ -20,7 +20,7 @@ if __name__=='__main__':
     x = torch.linspace(1, 3, 1000, requires_grad=True).unsqueeze(-1)
     y = torch.sin(x) + 1 - torch.sin(torch.tensor(1.0))
 
-    layer_sizes = [1] + [128] * 4 + [1]
+    layer_sizes = [1] + [16] * 4 + [1]
     lr = 1e-4
     epochs = 10000
 
@@ -39,16 +39,19 @@ if __name__=='__main__':
         loss_2 = loss_fn(y_1, torch.tensor([1.0]))
         loss = loss_1 + loss_2
 
-        if steps % 100 == 0:
+        if steps % 100 == 99:
             plt.cla()
             plt.scatter(x.detach().numpy(), y.detach().numpy())
             plt.plot(x.detach().numpy(), y_hat.detach().numpy(), c='red', lw='3')
             plt.text(0.5, 0, 'Loss=%.5f' % loss.item(), fontdict={'size': 10, 'color': 'red'})
             plt.pause(0.00001)
-            print(f'----------------------------------steps:{steps}----------------------------------')
+
+            y_3 = fnn(torch.tensor([3.0]))
+            print(f'----------------------------------steps:{steps+1}----------------------------------')
             print(f'loss_1 : {loss_1.item()}')
             print(f'loss_2 : {loss_2.item()}')
             print(f'y_1    : {y_1}')
+            print(f'y_3    : {y_3}')
 
         optimizer.zero_grad()
         loss.backward()
