@@ -117,7 +117,7 @@ if __name__ == '__main__':
 
             print('Steps: {:5d}, Loss: {:.3e}, Loss_res: {:.3e}, Loss_bcs: {:.3e}, L2_error: {:.3e}, Time: {:.3f}'
                 .format(steps, loss.item(), loss_res.item(), loss_bcs.item(), l2_error.item(), elapsed))
-            
+
             loss_bcs_log.append(loss_bcs.item())
             loss_res_log.append(loss_res.item())
             l2_error_log.append(l2_error.item())
