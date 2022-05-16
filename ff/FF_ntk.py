@@ -60,8 +60,8 @@ def empirical_ntk(fnet_single, params, x1, x2, compute='trace'):
     result = result.sum(0)
     return result
 
-def fnet_single(params, buffers, x):
-    return fnet(params, buffers, x.unsqueeze(0)).squeeze(0)
+def fnet_single(params, x):
+    return fnet(params, x.unsqueeze(0)).squeeze(0)
 
 
 if __name__ == '__main__':
@@ -79,13 +79,13 @@ if __name__ == '__main__':
     
 
     # Test data
-    x_test = torch.autograd.Variable(torch.linspace(0, 1, 100).unsqueeze(-1)).to(device)
+    x_test = torch.autograd.Variable(torch.linspace(0, 1, 1000).unsqueeze(-1)).to(device)
     y = u(x_test, a, b, n)
     y_xx = u_xx(x_test, a, b, n)
 
     # Hyperparameters
-    is_fourier_layer_trainable = False
-    sigma = 10
+    is_fourier_layer_trainable = True
+    sigma = 1
     lr = 1e-3
     lr_n = 10
     layer_sizes = [1] + [100] * 3 + [1]
@@ -129,7 +129,7 @@ if __name__ == '__main__':
         net.train()
         # Sample
         # x_train = torch.autograd.Variable(torch.rand([train_size, 1]), requires_grad=True).to(device)
-        x_train = torch.autograd.Variable(torch.linspace(0, 1, 100).unsqueeze(-1), requires_grad=True).to(device)
+        x_train = torch.autograd.Variable(torch.linspace(0, 1, train_size).unsqueeze(-1), requires_grad=True).to(device)
 
         # Predict
         y_1 = net(torch.tensor([1.0]).to(device))
@@ -163,7 +163,7 @@ if __name__ == '__main__':
             loss_res_log.append(loss_res.item())
             l2_error_log.append(l2_error.item())
 
-            result_ntk = empirical_ntk(fnet, params, x_train, x_train, 'trace')
+            result_ntk = empirical_ntk(fnet_single, params, x_train, x_train, 'trace')
             ntk_log.append(result_ntk)
             
             start_time = time.time()
@@ -222,7 +222,7 @@ if __name__ == '__main__':
 
     # Visualize the eigenvectors of the NTK
     fig, axs= plt.subplots(2, 3, figsize=(12, 6))
-    X_u = np.linspace(0, 1, 100)
+    X_u = np.linspace(0, 1, train_size)
     axs[0, 0].plot(X_u, np.real(eigvec_K[:,0]))
     axs[0, 1].plot(X_u, np.real(eigvec_K[:,1]))
     axs[0, 2].plot(X_u, np.real(eigvec_K[:,2]))
