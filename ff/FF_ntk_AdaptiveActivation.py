@@ -8,7 +8,7 @@ import time
 device = 'cuda'
 
 class NN_FF(nn.Module):
-    def __init__(self, layer_sizes, sigma, is_fourier_layer_trainable=True):
+    def __init__(self, layer_sizes, sigma, n=10, is_fourier_layer_trainable=True):
         super(NN_FF, self).__init__()
         if is_fourier_layer_trainable:
             self.B1 = nn.Parameter(torch.normal(0, 1, size=(1, layer_sizes[1] // 2)) * sigma)
@@ -23,6 +23,15 @@ class NN_FF(nn.Module):
             nn.init.normal_(m.bias, mean=0, std=1)
             self.linears.append(m)
 
+        self.A1 = nn.ParameterList()
+        for i in range(1, len(self.linears)):
+            a1 = nn.Parameter(torch.rand(layer_sizes[i]))
+            # a1 = nn.Parameter(torch.rand(1))
+            self.A1.append(a1)
+        
+        # self.A1 = nn.Parameter(torch.rand(1))
+        self.n = n
+
         # Normalization
         X = torch.rand([100000, 1])
         self.mu_X, self.sigma_X = X.mean(), X.std()
@@ -31,8 +40,11 @@ class NN_FF(nn.Module):
         x = (x - self.mu_X) / self.sigma_X
         x = torch.cat(( sin(torch.matmul(x, self.B1)),
                         cos(torch.matmul(x, self.B1))), dim=-1)
-        for linear in self.linears[:-1]:
-            x = torch.tanh(linear(x))
+        for linear, a in zip(self.linears[:-1], self.A1):
+        # for linear in self.linears[:-1]:
+            # x = torch.tanh(linear(x))
+            x = torch.tanh(self.n * a * linear(x))
+            # x = torch.tanh(self.n * self.A1 * linear(x))
         x = self.linears[-1](x)
         return x 
 
@@ -77,7 +89,6 @@ if __name__ == '__main__':
     def u_xx(x, a, b, n):
         return -(a*pi)**2 * sin(a * pi * x) - n*(b*pi)**2 * sin(b * pi * x)
     
-
     # Test data
     x_test = torch.autograd.Variable(torch.linspace(0, 1, 1000).unsqueeze(-1)).to(device)
     y = u(x_test, a, b, n)
@@ -87,6 +98,7 @@ if __name__ == '__main__':
     is_fourier_layer_trainable = True
     is_compute_ntk = False
     sigma = 1
+    activation_n = 10
     lr = 1e-3
     lr_n = 10
     layer_sizes = [1] + [100] * 3 + [1]
@@ -94,7 +106,9 @@ if __name__ == '__main__':
     epochs = 100000
 
     # net
-    net = NN_FF(layer_sizes, sigma, is_fourier_layer_trainable).to(device)
+    net = NN_FF(layer_sizes, sigma, activation_n, is_fourier_layer_trainable).to(device)
+    for name,parameters in net.named_parameters():
+        print(name,':',parameters.size())
 
     # loss
     loss_fn = nn.MSELoss().to(device)
@@ -123,6 +137,7 @@ if __name__ == '__main__':
     loss_bcs_log = []
     l2_error_log = []
     ntk_log = []
+    A1_log = []
 
     # Train
     start_time = time.time()
@@ -163,6 +178,9 @@ if __name__ == '__main__':
             loss_bcs_log.append(loss_bcs.item())
             loss_res_log.append(loss_res.item())
             l2_error_log.append(l2_error.item())
+            # A1_log.append(net.A1[0].item())
+            # print(net.A1[0])
+            # print(net.A1[1])
 
             if is_compute_ntk:
                 result_ntk = empirical_ntk(fnet_single, params, x_train, x_train, 'trace')
@@ -170,6 +188,7 @@ if __name__ == '__main__':
             
             start_time = time.time()
             scheduler.step()
+
 
     # Plot
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
@@ -195,7 +214,9 @@ if __name__ == '__main__':
     ax3.set_xlabel('epochs')
     ax3.legend()
     ax3.grid(True)
-    fig.savefig('./ff/plot/s{:d}_b{:d}_lr{:d}'.format(sigma, b, lr_n))
+    # fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_globalwise'.format(sigma, b, lr_n))
+    # fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_layerwise'.format(sigma, b, lr_n))
+    fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_neuronwise'.format(sigma, b, lr_n))
     plt.show()
     
     if is_compute_ntk:
@@ -243,4 +264,11 @@ if __name__ == '__main__':
         ax.set_ylabel(r'$\lambda$') 
         ax.set_title('Spectrum')
         plt.legend()
+        plt.show()
+
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.plot(100*np.arange(len(A1_log)), A1_log, label='A1', linewidth=2)
+        ax.set_xlabel('epochs')
+        ax.legend()
+        ax.grid(True)
         plt.show()
