@@ -214,9 +214,9 @@ if __name__ == '__main__':
     ax3.set_xlabel('epochs')
     ax3.legend()
     ax3.grid(True)
-    # fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_globalwise'.format(sigma, b, lr_n))
-    # fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_layerwise'.format(sigma, b, lr_n))
-    fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_neuronwise'.format(sigma, b, lr_n))
+    # fig.savefig('./Poisson_1D/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_globalwise'.format(sigma, b, lr_n))
+    # fig.savefig('./Poisson_1D/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_layerwise'.format(sigma, b, lr_n))
+    fig.savefig('./Poisson_1D/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_neuronwise'.format(sigma, b, lr_n))
     plt.show()
     
     if is_compute_ntk:

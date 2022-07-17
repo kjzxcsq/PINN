@@ -105,23 +105,22 @@ def fnet_single(params, x):
 if __name__ == '__main__':
     # Hyperparameters
     # adaptive_activation = 'GAAF'
-    adaptive_activation = 'L-LAAF'
+    # adaptive_activation = 'L-LAAF'
     # adaptive_activation = 'N-LAAF'
-    # adaptive_activation = 'NONE'
+    adaptive_activation = 'NONE'
     is_fourier_layer_trainable = False
     is_compute_ntk = False
     sigma = 1
     scaling_factor = 10
     lr = 2e-4
-    lr_n = 10
-    layer_sizes = [1] + [50] * 3 + [1]
+    lr_n = 0
+    layer_sizes = [1] + [50] + [50] * 3 + [1]
     train_size = 300
-    epochs = 5000
+    epochs = 10000
 
     # Exact solution
     def u(x):
-        # return heaviside(x,)
-        return 0.2*sin(6*x) if x <= 0 else 1+0.1*x*cos(18*x)
+        return 0.3*sin(3*x) if x <= 0 else 1+0.1*x*cos(30*x)
         
     # Training data
     x_train = (torch.rand(train_size)*6 - 3).unsqueeze(-1).to(device)
@@ -210,7 +209,7 @@ if __name__ == '__main__':
                 ntk_log.append(result_ntk)
             
             start_time = time.time()
-            # scheduler.step()
+            scheduler.step()
 
 
     # Plot
@@ -237,9 +236,7 @@ if __name__ == '__main__':
     ax3.set_xlabel('epochs')
     ax3.legend()
     ax3.grid(True)
-    # fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_globalwise'.format(sigma, b, lr_n))
-    # fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_layerwise'.format(sigma, b, lr_n))
-    # fig.savefig('./ff/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_neuronwise'.format(sigma, b, lr_n))
+    fig.savefig('./NonlinearDiscontinuous/plot/s{:d}_lr{:d}_{:s}'.format(sigma, lr_n, adaptive_activation))
     plt.show()
     
     if is_compute_ntk:

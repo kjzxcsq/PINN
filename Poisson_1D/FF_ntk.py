@@ -195,7 +195,7 @@ if __name__ == '__main__':
     ax3.set_xlabel('epochs')
     ax3.legend()
     ax3.grid(True)
-    # fig.savefig('./ff/plot/s{:d}_b{:d}_lr{:d}'.format(sigma, b, lr_n))
+    # fig.savefig('./Poisson_1D/plot/s{:d}_b{:d}_lr{:d}'.format(sigma, b, lr_n))
     plt.show()
     
     if is_compute_ntk:
