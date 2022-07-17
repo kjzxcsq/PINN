@@ -108,12 +108,12 @@ if __name__ == '__main__':
     # adaptive_activation = 'L-LAAF'
     # adaptive_activation = 'N-LAAF'
     adaptive_activation = 'NONE'
-    is_fourier_layer_trainable = False
+    is_fourier_layer_trainable = True
     is_compute_ntk = False
     sigma = 1
     scaling_factor = 10
     lr = 2e-4
-    lr_n = 0
+    lr_n = 10
     layer_sizes = [1] + [50] + [50] * 3 + [1]
     train_size = 300
     epochs = 10000
