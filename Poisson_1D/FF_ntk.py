@@ -68,7 +68,7 @@ def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
     #     K = torch.matmul(j1, torch.transpose(j2, 0, 1))
     #     result2 = result2 + K
 
-    # assert torch.allclose(result1, result2, atol=1e-5)
+    # assert torch.allclose(result, result2, atol=1e-5)
     return result
 
 def fnet_single(params, x):
@@ -78,7 +78,7 @@ def fnet_single(params, x):
 if __name__ == '__main__':
     a = 2
     b = 20
-    n = 1 
+    n = 1
 
     # Exact solution
     def u(x, a, b, n):
@@ -100,9 +100,9 @@ if __name__ == '__main__':
     sigma = 10
     lr = 1e-3
     lr_n = 10
-    layer_sizes = [1] + [100] * 3 + [1]
+    layer_sizes = [1] + [500] * 3 + [1]
     train_size = 100
-    epochs = 10000
+    epochs = 50000
 
     # net
     net = NN_FF(layer_sizes, sigma, is_fourier_layer_trainable).to(device)
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     else:
         optimizer = torch.optim.Adam(net.parameters(), lr)
 
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
     
     fnet, params = make_functional(net)
     
@@ -133,29 +133,46 @@ if __name__ == '__main__':
     loss_res_log = []
     loss_bcs_log = []
     l2_error_log = []
-    ntk_log = []
+    K_uu_log = []
+    K_ur_log = []
+    K_rr_log = []
+
+    # Computational domain
+    bc1_coords = torch.tensor([[0.0], [0.0]])
+    bc2_coords = torch.tensor([[1.0], [1.0]])
+    dom_coords = torch.tensor([[0.0], [1.0]])
+    
+    # Sample
+    X_bc1 = bc1_coords[0, 0] * torch.ones(train_size // 2, 1)
+    X_bc2 = bc2_coords[1, 0] * torch.ones(train_size // 2, 1)
+    X_u = torch.vstack((X_bc1, X_bc2)).to(device)
+    
+    X_r = torch.autograd.Variable(torch.linspace(dom_coords[0, 0], 
+                                                 dom_coords[1, 0], train_size).unsqueeze(-1), requires_grad=True).to(device)
 
     # Train
     start_time = time.time()
     for steps in range(1, epochs+1):
         net.train()
-        # Sample
-        # x_train = torch.autograd.Variable(torch.rand([train_size, 1]), requires_grad=True).to(device)
-        x_train = torch.autograd.Variable(torch.linspace(0, 1, train_size).unsqueeze(-1), requires_grad=True).to(device)
 
         # Predict
         y_1 = net(torch.tensor([1.0]).to(device))
         y_0 = net(torch.tensor([0.0]).to(device))
-        y_hat = net(x_train)
+        y_hat = net(X_r)
 
-        dy_x = torch.autograd.grad(y_hat, x_train, grad_outputs=torch.ones(y_hat.shape).to(device), create_graph=True)[0]
-        dy_xx = torch.autograd.grad(dy_x, x_train, grad_outputs=torch.ones(dy_x.shape).to(device), create_graph=True)[0]
+        dy_x = torch.autograd.grad(y_hat, X_r, grad_outputs=torch.ones(y_hat.shape).to(device), create_graph=True)[0]
+        dy_xx = torch.autograd.grad(dy_x, X_r, grad_outputs=torch.ones(dy_x.shape).to(device), create_graph=True)[0]
 
         # Residual loss
-        loss_res = loss_fn(dy_xx, u_xx(x_train, a, b, n).to(device))
+        loss_res = loss_fn(dy_xx, u_xx(X_r, a, b, n).to(device))
         # Boundary loss
-        loss_bcs = 128*(  loss_fn(y_1, torch.tensor([0.0]).to(device))
+        loss_bcs = 100*( loss_fn(y_1, torch.tensor([0.0]).to(device))
                         +loss_fn(y_0, torch.tensor([0.0]).to(device)))
+        # nxu = net(X_u)
+        # uxu = u(X_u, a, b, n)
+        # loss_bcs2 = loss_fn(nxu, uxu)*200
+        # loss_bcs2 = 200*loss_fn(net(X_u), u(X_u, a, b, n))
+        # assert torch.allclose(loss_bcs, loss_bcs2)
         # Total loss
         loss = loss_res + loss_bcs
 
@@ -163,10 +180,10 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-        if steps == 1:
-            if is_compute_ntk:
-                result_ntk = empirical_ntk(fnet_single, params, x_train, x_test, 'diagonal')
-                ntk_log.append(result_ntk)
+        # if steps == 1:
+        #     if is_compute_ntk:
+        #         K_uu_value = empirical_ntk(fnet_single, params, X_r, x_test, 'full')
+        #         K_uu_log.append(K_uu_value)
         
         if steps % 100 == 0:
             net.eval()
@@ -181,8 +198,13 @@ if __name__ == '__main__':
             l2_error_log.append(l2_error.item())
 
             if is_compute_ntk:
-                result_ntk = empirical_ntk(fnet_single, params, x_train, x_test, 'diagonal')
-                ntk_log.append(result_ntk)
+                K_uu_value = empirical_ntk(fnet_single, params, X_u, X_u, 'full').detach().cpu()
+                K_ur_value = empirical_ntk(fnet_single, params, X_u, X_r, 'full').detach().cpu()
+                K_rr_value = empirical_ntk(fnet_single, params, X_r, X_r, 'full').detach().cpu()
+
+                K_uu_log.append(K_uu_value)
+                K_ur_log.append(K_ur_value)
+                K_rr_log.append(K_rr_value)
             
             start_time = time.time()
             scheduler.step()
@@ -217,9 +239,18 @@ if __name__ == '__main__':
     if is_compute_ntk:
         # Create loggers for the eigenvalues of the NTK
         lambda_K_log = []
-        for K in ntk_log:
+        K_list = []
+        for k in range(len(K_uu_log)):
+            K_uu = K_uu_log[k]
+            K_ur = K_ur_log[k]
+            K_rr = K_rr_log[k]
+
+            K = np.concatenate([np.concatenate([K_uu, K_ur], axis = 1),
+                                np.concatenate([K_ur.T, K_rr], axis = 1)], axis = 0)
+            K_list.append(K)
+
             # Compute eigenvalues
-            lambda_K, eigvec_K = np.linalg.eig(K.detach().cpu().numpy())
+            lambda_K, eigvec_K = np.linalg.eig(K)
             
             # Sort in descresing order
             lambda_K = np.sort(np.real(lambda_K))[::-1]
@@ -235,19 +266,30 @@ if __name__ == '__main__':
         plt.yscale('log')
         ax.set_xlabel('index')
         ax.set_ylabel(r'$\lambda_{uu}$')
-        ax.set_title(r'Eigenvalues of ${K}_{uu}$')
+        ax.set_title(r'Eigenvalues of ${K}$')
         ax.legend()
         plt.show()
 
         # Visualize the eigenvectors of the NTK
         fig, axs= plt.subplots(2, 3, figsize=(12, 6))
-        X_u = np.linspace(0, 1, train_size)
+        X_u = np.linspace(0, 1, 2*train_size)
         axs[0, 0].plot(X_u, np.real(eigvec_K[:,0]))
         axs[0, 1].plot(X_u, np.real(eigvec_K[:,1]))
         axs[0, 2].plot(X_u, np.real(eigvec_K[:,2]))
         axs[1, 0].plot(X_u, np.real(eigvec_K[:,3]))
         axs[1, 1].plot(X_u, np.real(eigvec_K[:,4]))
         axs[1, 2].plot(X_u, np.real(eigvec_K[:,5]))
+        plt.show()
+
+        # Change of the NTK
+        NTK_change_list = []
+        K0 = K_list[0]
+        for K in K_list:
+            diff = np.linalg.norm(K - K0) / np.linalg.norm(K0) 
+            NTK_change_list.append(diff)
+        fig, ax = plt.subplots(figsize=(6,5))
+        ax.plot(NTK_change_list)
+        ax.set_title('Change of the NTK')
         plt.show()
 
         # Visualize the eigenvalues of the NTK
