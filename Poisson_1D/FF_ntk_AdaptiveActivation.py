@@ -79,7 +79,7 @@ def fnet_single(params, x):
 if __name__ == '__main__':
     a = 2
     b = 20
-    n = 0.1 
+    n = 0.1
 
     # Exact solution
     def u(x, a, b, n):
@@ -96,14 +96,14 @@ if __name__ == '__main__':
 
     # Hyperparameters
     is_fourier_layer_trainable = True
-    is_compute_ntk = False
-    sigma = 1
+    is_compute_ntk = True
+    sigma = 10
     activation_n = 10
     lr = 1e-3
     lr_n = 10
     layer_sizes = [1] + [100] * 3 + [1]
     train_size = 100
-    epochs = 100000
+    epochs = 1000
 
     # net
     net = NN_FF(layer_sizes, sigma, activation_n, is_fourier_layer_trainable).to(device)
@@ -216,7 +216,7 @@ if __name__ == '__main__':
     ax3.grid(True)
     # fig.savefig('./Poisson_1D/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_globalwise'.format(sigma, b, lr_n))
     # fig.savefig('./Poisson_1D/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_layerwise'.format(sigma, b, lr_n))
-    fig.savefig('./Poisson_1D/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_neuronwise'.format(sigma, b, lr_n))
+    # fig.savefig('./Poisson_1D/AdaptiveActivation/s{:d}_b{:d}_lr{:d}_aa_neuronwise'.format(sigma, b, lr_n))
     plt.show()
     
     if is_compute_ntk:
@@ -266,9 +266,9 @@ if __name__ == '__main__':
         plt.legend()
         plt.show()
 
-        fig, ax = plt.subplots(figsize=(6, 5))
-        ax.plot(100*np.arange(len(A1_log)), A1_log, label='A1', linewidth=2)
-        ax.set_xlabel('epochs')
-        ax.legend()
-        ax.grid(True)
-        plt.show()
+        # fig, ax = plt.subplots(figsize=(6, 5))
+        # ax.plot(100*np.arange(len(A1_log)), A1_log, label='A1', linewidth=2)
+        # ax.set_xlabel('epochs')
+        # ax.legend()
+        # ax.grid(True)
+        # plt.show()

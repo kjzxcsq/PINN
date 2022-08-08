@@ -36,7 +36,7 @@ class NN_FF(nn.Module):
         x = self.linears[-1](x)
         return x 
 
-def empirical_ntk(fnet_single, params, x1, x2, compute='trace'):
+def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
     # Compute J(x1)
     jac1 = vmap(jacrev(fnet_single), (None, 0))(params, x1)
     jac1 = [j.flatten(2) for j in jac1]
@@ -57,7 +57,18 @@ def empirical_ntk(fnet_single, params, x1, x2, compute='trace'):
         assert False
         
     result = torch.stack([torch.einsum(einsum_expr, j1, j2) for j1, j2 in zip(jac1, jac2)])
-    result = result.sum(0)
+    result = result.sum(0).squeeze()
+
+    # D = x1.shape[0]
+    # N = len(jac1)
+    # result2 = torch.zeros((D, D)).to(device)
+    # for k in range(N):
+    #     j1 = torch.reshape(jac1[k], (D, -1))
+    #     j2 = torch.reshape(jac2[k], (D, -1))
+    #     K = torch.matmul(j1, torch.transpose(j2, 0, 1))
+    #     result2 = result2 + K
+
+    # assert torch.allclose(result1, result2, atol=1e-5)
     return result
 
 def fnet_single(params, x):
@@ -67,7 +78,7 @@ def fnet_single(params, x):
 if __name__ == '__main__':
     a = 2
     b = 20
-    n = 0.1 
+    n = 1 
 
     # Exact solution
     def u(x, a, b, n):
@@ -79,14 +90,14 @@ if __name__ == '__main__':
     
 
     # Test data
-    x_test = torch.autograd.Variable(torch.linspace(0, 1, 1000).unsqueeze(-1)).to(device)
+    x_test = torch.autograd.Variable(torch.linspace(0, 1, 100).unsqueeze(-1)).to(device)
     y = u(x_test, a, b, n)
     y_xx = u_xx(x_test, a, b, n)
 
     # Hyperparameters
     is_fourier_layer_trainable = False
     is_compute_ntk = True
-    sigma = 1
+    sigma = 10
     lr = 1e-3
     lr_n = 10
     layer_sizes = [1] + [100] * 3 + [1]
@@ -152,6 +163,11 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
+        if steps == 1:
+            if is_compute_ntk:
+                result_ntk = empirical_ntk(fnet_single, params, x_train, x_test, 'diagonal')
+                ntk_log.append(result_ntk)
+        
         if steps % 100 == 0:
             net.eval()
             elapsed = time.time() - start_time
@@ -165,7 +181,7 @@ if __name__ == '__main__':
             l2_error_log.append(l2_error.item())
 
             if is_compute_ntk:
-                result_ntk = empirical_ntk(fnet_single, params, x_train, x_train, 'trace')
+                result_ntk = empirical_ntk(fnet_single, params, x_train, x_test, 'diagonal')
                 ntk_log.append(result_ntk)
             
             start_time = time.time()
