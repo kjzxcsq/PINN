@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
-from torch import matmul, sin, cos, pi 
-from functorch import make_functional, vmap, vjp, jvp, jacrev
+from torch import sin, cos, pi 
+from functorch import make_functional, vmap, jacrev
 import time
 device = 'cuda'
 
@@ -59,16 +59,16 @@ def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
     result = torch.stack([torch.einsum(einsum_expr, j1, j2) for j1, j2 in zip(jac1, jac2)])
     result = result.sum(0).squeeze()
 
-    # D = x1.shape[0]
-    # N = len(jac1)
-    # result2 = torch.zeros((D, D)).to(device)
-    # for k in range(N):
-    #     j1 = torch.reshape(jac1[k], (D, -1))
-    #     j2 = torch.reshape(jac2[k], (D, -1))
-    #     K = torch.matmul(j1, torch.transpose(j2, 0, 1))
-    #     result2 = result2 + K
+    D = x1.shape[0]
+    N = len(jac1)
+    result2 = torch.zeros((D, D)).to(device)
+    for k in range(N):
+        j1 = torch.reshape(jac1[k], (D, -1))
+        j2 = torch.reshape(jac2[k], (D, -1))
+        K = torch.matmul(j1, torch.transpose(j2, 0, 1))
+        result2 = result2 + K
 
-    # assert torch.allclose(result, result2, atol=1e-5)
+    assert torch.allclose(result, result2, atol=1e-5)
     return result
 
 def fnet_single(params, x):
@@ -97,12 +97,12 @@ if __name__ == '__main__':
     # Hyperparameters
     is_fourier_layer_trainable = False
     is_compute_ntk = True
-    sigma = 10
+    sigma = 1
     lr = 1e-3
     lr_n = 10
     layer_sizes = [1] + [500] * 3 + [1]
     train_size = 100
-    epochs = 50000
+    epochs = 10000
 
     # net
     net = NN_FF(layer_sizes, sigma, is_fourier_layer_trainable).to(device)
@@ -125,9 +125,7 @@ if __name__ == '__main__':
     else:
         optimizer = torch.optim.Adam(net.parameters(), lr)
 
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
-    
-    fnet, params = make_functional(net)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
     
     #logger
     loss_res_log = []
@@ -154,7 +152,7 @@ if __name__ == '__main__':
     start_time = time.time()
     for steps in range(1, epochs+1):
         net.train()
-
+        
         # Predict
         y_1 = net(torch.tensor([1.0]).to(device))
         y_0 = net(torch.tensor([0.0]).to(device))
@@ -198,9 +196,11 @@ if __name__ == '__main__':
             l2_error_log.append(l2_error.item())
 
             if is_compute_ntk:
-                K_uu_value = empirical_ntk(fnet_single, params, X_u, X_u, 'full').detach().cpu()
-                K_ur_value = empirical_ntk(fnet_single, params, X_u, X_r, 'full').detach().cpu()
-                K_rr_value = empirical_ntk(fnet_single, params, X_r, X_r, 'full').detach().cpu()
+                fnet, params = make_functional(net)
+    
+                K_uu_value = empirical_ntk(fnet_single, params, X_u, X_u, 'full').detach().cpu().numpy()
+                K_ur_value = empirical_ntk(fnet_single, params, X_u, X_r, 'full').detach().cpu().numpy()
+                K_rr_value = empirical_ntk(fnet_single, params, X_r, X_r, 'full').detach().cpu().numpy()
 
                 K_uu_log.append(K_uu_value)
                 K_ur_log.append(K_ur_value)
