@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import sin, cos, pi 
-from functorch import make_functional, vmap, jacrev
+from functorch import make_functional, vmap, jacrev, jacfwd, hessian
 import time
 device = 'cuda'
 
@@ -35,6 +35,27 @@ class NN_FF(nn.Module):
             x = torch.tanh(linear(x))
         x = self.linears[-1](x)
         return x 
+
+def compute_ntk(jac1, jac2, compute='full'):
+    # Compute J(x1) @ J(x2).T
+    einsum_expr = None
+    if compute == 'full':
+        einsum_expr = 'Naf,Mbf->NMab'
+    elif compute == 'trace':
+        einsum_expr = 'Naf,Maf->NM'
+    elif compute == 'diagonal':
+        einsum_expr = 'Naf,Maf->NMa'
+    else:
+        assert False
+
+    result = torch.stack([torch.einsum(einsum_expr, j1, j2) for j1, j2 in zip(jac1, jac2)])
+    result = result.sum(0).squeeze()
+    return result
+
+def compute_jac(func, params, x):
+    jac = vmap(jacrev(func), (None, 0))(params, x)
+    jac = [j.flatten(2) for j in jac]
+    return jac
 
 def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
     # Compute J(x1)
@@ -74,6 +95,22 @@ def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
 def fnet_single(params, x):
     return fnet(params, x.unsqueeze(0)).squeeze(0)
 
+def net_u(params, x):
+    u = fnet(params, x.unsqueeze(0)).squeeze(0)
+    # print(u)
+    return u
+
+def net_r(params, x):
+    # sourcery skip: inline-immediately-returned-variable
+    # x = x.requires_grad_()
+    # u = fnet(params, x.unsqueeze(0)).squeeze(0)
+    u_xx = hessian(fnet, argnums=1)(params, x).squeeze().unsqueeze(-1)
+    # print(u_xx)
+    # u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones(u.shape).to(device), create_graph=True, allow_unused=True)[0]
+    # u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones(u.shape).to(device), create_graph=True, allow_unused=True)[0]
+    # dy_x = torch.autograd.grad(y_hat, X_r, grad_outputs=torch.ones(y_hat.shape).to(device), create_graph=True)[0]
+    # dy_xx = torch.autograd.grad(dy_x, X_r, grad_outputs=torch.ones(dy_x.shape).to(device), create_graph=True)[0]
+    return u_xx
 
 if __name__ == '__main__':
     a = 2
@@ -97,15 +134,17 @@ if __name__ == '__main__':
     # Hyperparameters
     is_fourier_layer_trainable = False
     is_compute_ntk = True
-    sigma = 1
+    sigma = 10
     lr = 1e-3
     lr_n = 10
-    layer_sizes = [1] + [500] * 3 + [1]
+    layer_sizes = [1] + [100] * 3 + [1]
     train_size = 100
     epochs = 10000
 
     # net
     net = NN_FF(layer_sizes, sigma, is_fourier_layer_trainable).to(device)
+    for name,parameters in net.named_parameters():
+        print(name,':',parameters.size())
 
     # loss
     loss_fn = nn.MSELoss().to(device)
@@ -143,7 +182,7 @@ if __name__ == '__main__':
     # Sample
     X_bc1 = bc1_coords[0, 0] * torch.ones(train_size // 2, 1)
     X_bc2 = bc2_coords[1, 0] * torch.ones(train_size // 2, 1)
-    X_u = torch.vstack((X_bc1, X_bc2)).to(device)
+    X_u = torch.autograd.Variable(torch.vstack((X_bc1, X_bc2)), requires_grad=True).to(device)
     
     X_r = torch.autograd.Variable(torch.linspace(dom_coords[0, 0], 
                                                  dom_coords[1, 0], train_size).unsqueeze(-1), requires_grad=True).to(device)
@@ -198,13 +237,23 @@ if __name__ == '__main__':
             if is_compute_ntk:
                 fnet, params = make_functional(net)
     
-                K_uu_value = empirical_ntk(fnet_single, params, X_u, X_u, 'full').detach().cpu().numpy()
-                K_ur_value = empirical_ntk(fnet_single, params, X_u, X_r, 'full').detach().cpu().numpy()
-                K_rr_value = empirical_ntk(fnet_single, params, X_r, X_r, 'full').detach().cpu().numpy()
+                # K_uu_value = empirical_ntk(fnet_single, params, X_u, X_u, 'full').detach().cpu().numpy()
+                # K_ur_value = empirical_ntk(fnet_single, params, X_u, X_r, 'full').detach().cpu().numpy()
+                # K_rr_value = empirical_ntk(fnet_single, params, X_r, X_r, 'full').detach().cpu().numpy()
 
-                K_uu_log.append(K_uu_value)
-                K_ur_log.append(K_ur_value)
-                K_rr_log.append(K_rr_value)
+                J_u = compute_jac(net_u, params, X_u)
+                J_r = compute_jac(net_r, params, X_r)
+                K_uu_value2 = compute_ntk(J_u, J_u, 'full').detach().cpu().numpy()
+                K_ur_value2 = compute_ntk(J_u, J_r, 'full').detach().cpu().numpy()
+                K_rr_value2 = compute_ntk(J_r, J_r, 'full').detach().cpu().numpy()
+
+                # assert np.allclose(K_uu_value, K_uu_value2)
+                # assert np.allclose(K_ur_value, K_ur_value2)
+                # assert np.allclose(K_rr_value, K_rr_value2)
+
+                K_uu_log.append(K_uu_value2)
+                K_ur_log.append(K_ur_value2)
+                K_rr_log.append(K_rr_value2)
             
             start_time = time.time()
             scheduler.step()
