@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import sin, cos, pi 
-from functorch import make_functional, vmap, jacrev, jacfwd, hessian
+from functorch import make_functional, vmap, jacrev, hessian
 import time
 device = 'cuda'
 
@@ -57,60 +57,11 @@ def compute_jac(func, params, x):
     jac = [j.flatten(2) for j in jac]
     return jac
 
-def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
-    # Compute J(x1)
-    jac1 = vmap(jacrev(fnet_single), (None, 0))(params, x1)
-    jac1 = [j.flatten(2) for j in jac1]
-    
-    # Compute J(x2)
-    jac2 = vmap(jacrev(fnet_single), (None, 0))(params, x2)
-    jac2 = [j.flatten(2) for j in jac2]
-    
-    # Compute J(x1) @ J(x2).T
-    einsum_expr = None
-    if compute == 'full':
-        einsum_expr = 'Naf,Mbf->NMab'
-    elif compute == 'trace':
-        einsum_expr = 'Naf,Maf->NM'
-    elif compute == 'diagonal':
-        einsum_expr = 'Naf,Maf->NMa'
-    else:
-        assert False
-        
-    result = torch.stack([torch.einsum(einsum_expr, j1, j2) for j1, j2 in zip(jac1, jac2)])
-    result = result.sum(0).squeeze()
-
-    D = x1.shape[0]
-    N = len(jac1)
-    result2 = torch.zeros((D, D)).to(device)
-    for k in range(N):
-        j1 = torch.reshape(jac1[k], (D, -1))
-        j2 = torch.reshape(jac2[k], (D, -1))
-        K = torch.matmul(j1, torch.transpose(j2, 0, 1))
-        result2 = result2 + K
-
-    assert torch.allclose(result, result2, atol=1e-5)
-    return result
-
-def fnet_single(params, x):
+def net_u(params, x):
     return fnet(params, x.unsqueeze(0)).squeeze(0)
 
-def net_u(params, x):
-    u = fnet(params, x.unsqueeze(0)).squeeze(0)
-    # print(u)
-    return u
-
 def net_r(params, x):
-    # sourcery skip: inline-immediately-returned-variable
-    # x = x.requires_grad_()
-    # u = fnet(params, x.unsqueeze(0)).squeeze(0)
-    u_xx = hessian(fnet, argnums=1)(params, x).squeeze().unsqueeze(-1)
-    # print(u_xx)
-    # u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones(u.shape).to(device), create_graph=True, allow_unused=True)[0]
-    # u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones(u.shape).to(device), create_graph=True, allow_unused=True)[0]
-    # dy_x = torch.autograd.grad(y_hat, X_r, grad_outputs=torch.ones(y_hat.shape).to(device), create_graph=True)[0]
-    # dy_xx = torch.autograd.grad(dy_x, X_r, grad_outputs=torch.ones(dy_x.shape).to(device), create_graph=True)[0]
-    return u_xx
+    return hessian(fnet, argnums=1)(params, x).squeeze().unsqueeze(-1)
 
 if __name__ == '__main__':
     a = 2
@@ -139,7 +90,7 @@ if __name__ == '__main__':
     lr_n = 10
     layer_sizes = [1] + [100] * 3 + [1]
     train_size = 100
-    epochs = 10000
+    epochs = 1000
 
     # net
     net = NN_FF(layer_sizes, sigma, is_fourier_layer_trainable).to(device)
@@ -236,24 +187,16 @@ if __name__ == '__main__':
 
             if is_compute_ntk:
                 fnet, params = make_functional(net)
-    
-                # K_uu_value = empirical_ntk(fnet_single, params, X_u, X_u, 'full').detach().cpu().numpy()
-                # K_ur_value = empirical_ntk(fnet_single, params, X_u, X_r, 'full').detach().cpu().numpy()
-                # K_rr_value = empirical_ntk(fnet_single, params, X_r, X_r, 'full').detach().cpu().numpy()
 
                 J_u = compute_jac(net_u, params, X_u)
                 J_r = compute_jac(net_r, params, X_r)
-                K_uu_value2 = compute_ntk(J_u, J_u, 'full').detach().cpu().numpy()
-                K_ur_value2 = compute_ntk(J_u, J_r, 'full').detach().cpu().numpy()
-                K_rr_value2 = compute_ntk(J_r, J_r, 'full').detach().cpu().numpy()
+                K_uu_value = compute_ntk(J_u, J_u, 'full').detach().cpu().numpy()
+                K_ur_value = compute_ntk(J_u, J_r, 'full').detach().cpu().numpy()
+                K_rr_value = compute_ntk(J_r, J_r, 'full').detach().cpu().numpy()
 
-                # assert np.allclose(K_uu_value, K_uu_value2)
-                # assert np.allclose(K_ur_value, K_ur_value2)
-                # assert np.allclose(K_rr_value, K_rr_value2)
-
-                K_uu_log.append(K_uu_value2)
-                K_ur_log.append(K_ur_value2)
-                K_rr_log.append(K_rr_value2)
+                K_uu_log.append(K_uu_value)
+                K_ur_log.append(K_ur_value)
+                K_rr_log.append(K_rr_value)
             
             start_time = time.time()
             scheduler.step()
