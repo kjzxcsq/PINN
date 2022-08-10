@@ -63,6 +63,45 @@ def net_u(params, x):
 def net_r(params, x):
     return hessian(fnet, argnums=1)(params, x).squeeze().unsqueeze(-1)
 
+def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
+    # Compute J(x1)
+    jac1 = vmap(jacrev(fnet_single), (None, 0))(params, x1)
+    jac1 = [j.flatten(2) for j in jac1]
+    
+    # Compute J(x2)
+    jac2 = vmap(jacrev(fnet_single), (None, 0))(params, x2)
+    jac2 = [j.flatten(2) for j in jac2]
+    
+    # Compute J(x1) @ J(x2).T
+    einsum_expr = None
+    if compute == 'full':
+        einsum_expr = 'Naf,Mbf->NMab'
+    elif compute == 'trace':
+        einsum_expr = 'Naf,Maf->NM'
+    elif compute == 'diagonal':
+        einsum_expr = 'Naf,Maf->NMa'
+    else:
+        assert False
+        
+    result = torch.stack([torch.einsum(einsum_expr, j1, j2) for j1, j2 in zip(jac1, jac2)])
+    result = result.sum(0).squeeze()
+
+    # D = x1.shape[0]
+    # N = len(jac1)
+    # result2 = torch.zeros((D, D)).to(device)
+    # for k in range(N):
+    #     j1 = torch.reshape(jac1[k], (D, -1))
+    #     j2 = torch.reshape(jac2[k], (D, -1))
+    #     K = torch.matmul(j1, torch.transpose(j2, 0, 1))
+    #     result2 = result2 + K
+
+    # assert torch.allclose(result, result2, atol=1e-5)
+    return result
+
+def fnet_single(params, x):
+    return fnet(params, x.unsqueeze(0)).squeeze(0)
+
+
 if __name__ == '__main__':
     a = 2
     b = 20
@@ -83,12 +122,12 @@ if __name__ == '__main__':
     y_xx = u_xx(x_test, a, b, n)
 
     # Hyperparameters
-    is_fourier_layer_trainable = False
+    is_fourier_layer_trainable = True
     is_compute_ntk = True
-    sigma = 10
+    sigma = 1
     lr = 1e-3
     lr_n = 10
-    layer_sizes = [1] + [100] * 3 + [1]
+    layer_sizes = [1] + [500] * 3 + [1]
     train_size = 100
     epochs = 1000
 
@@ -168,12 +207,7 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-        # if steps == 1:
-        #     if is_compute_ntk:
-        #         K_uu_value = empirical_ntk(fnet_single, params, X_r, x_test, 'full')
-        #         K_uu_log.append(K_uu_value)
-        
-        if steps % 100 == 0:
+        if steps % 100 == 0 or steps == 10:
             net.eval()
             elapsed = time.time() - start_time
             l2_error = torch.linalg.norm(y - net(x_test), 2) / torch.linalg.norm(y, 2)
@@ -187,6 +221,7 @@ if __name__ == '__main__':
 
             if is_compute_ntk:
                 fnet, params = make_functional(net)
+                # spectrum = empirical_ntk(fnet_single, params, X_r, X_r, 'full').detach().cpu().numpy()
 
                 J_u = compute_jac(net_u, params, X_u)
                 J_r = compute_jac(net_r, params, X_r)
@@ -204,7 +239,7 @@ if __name__ == '__main__':
     # Plot
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
 
-    ax1.set_ylim(-1.5, 1.5)
+    ax1.set_ylim(-2, 2)
     ax1.plot(x_test.detach().cpu().numpy(), y.detach().cpu().numpy(), label='true', linewidth=2)
     ax1.plot(x_test.detach().cpu().numpy(), net(x_test).detach().cpu().numpy(), label='pred', linewidth=1, linestyle='--')
     ax1.set_xlabel('x')
@@ -252,12 +287,12 @@ if __name__ == '__main__':
 
         # Eigenvalues of NTK
         fig, ax = plt.subplots(figsize=(6, 5))
-        ax.plot(lambda_K_log[0], label = 'n=0')
-        ax.plot(lambda_K_log[-1], '--', label = 'n=40,000')
+        ax.plot(lambda_K_log[0], label = 'n=10')
+        ax.plot(lambda_K_log[-1], '--', label = 'n={:d}'.format(epochs))
         plt.xscale('log')
         plt.yscale('log')
         ax.set_xlabel('index')
-        ax.set_ylabel(r'$\lambda_{uu}$')
+        ax.set_ylabel(r'$\lambda$')
         ax.set_title(r'Eigenvalues of ${K}$')
         ax.legend()
         plt.show()
@@ -282,15 +317,4 @@ if __name__ == '__main__':
         fig, ax = plt.subplots(figsize=(6,5))
         ax.plot(NTK_change_list)
         ax.set_title('Change of the NTK')
-        plt.show()
-
-        # Visualize the eigenvalues of the NTK
-        fig, ax = plt.subplots(figsize=(6, 5))
-        ax.plot(lambda_K_log[0], label=r'$\sigma={}$'.format(sigma))
-        plt.xscale('log')
-        plt.yscale('log')
-        ax.set_xlabel('index')
-        ax.set_ylabel(r'$\lambda$') 
-        ax.set_title('Spectrum')
-        plt.legend()
         plt.show()

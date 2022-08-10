@@ -130,8 +130,6 @@ if __name__ == '__main__':
 
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
     
-    fnet, params = make_functional(net)
-    
     #logger
     loss_res_log = []
     loss_bcs_log = []
@@ -183,6 +181,7 @@ if __name__ == '__main__':
             # print(net.A1[1])
 
             if is_compute_ntk:
+                fnet, params = make_functional(net)
                 result_ntk = empirical_ntk(fnet_single, params, x_train, x_train, 'trace')
                 ntk_log.append(result_ntk)
             
