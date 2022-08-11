@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import sin, cos, exp, sum, pi
-from functorch import make_functional, vmap, vjp, jvp, jacrev
+from functorch import make_functional, vmap, hessian, jacrev
 import time
 device = 'cuda'
 
@@ -74,7 +74,34 @@ class NN_FF(nn.Module):
         x = self.linears[-1](x)
         return x 
 
-def empirical_ntk(fnet_single, params, x1, x2, compute='trace'):
+def compute_ntk(jac1, jac2, compute='full'):
+    # Compute J(x1) @ J(x2).T
+    einsum_expr = None
+    if compute == 'full':
+        einsum_expr = 'Naf,Mbf->NMab'
+    elif compute == 'trace':
+        einsum_expr = 'Naf,Maf->NM'
+    elif compute == 'diagonal':
+        einsum_expr = 'Naf,Maf->NMa'
+    else:
+        assert False
+
+    result = torch.stack([torch.einsum(einsum_expr, j1, j2) for j1, j2 in zip(jac1, jac2)])
+    result = result.sum(0).squeeze()
+    return result
+
+def compute_jac(func, params, x):
+    jac = vmap(jacrev(func), (None, 0))(params, x)
+    jac = [j.flatten(2) for j in jac]
+    return jac
+
+def net_u(params, x):
+    return fnet(params, x.unsqueeze(0)).squeeze(0)
+
+def net_r(params, x):
+    return hessian(fnet, argnums=1)(params, x).squeeze().unsqueeze(-1)
+
+def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
     # Compute J(x1)
     jac1 = vmap(jacrev(fnet_single), (None, 0))(params, x1)
     jac1 = [j.flatten(2) for j in jac1]
@@ -95,7 +122,7 @@ def empirical_ntk(fnet_single, params, x1, x2, compute='trace'):
         assert False
         
     result = torch.stack([torch.einsum(einsum_expr, j1, j2) for j1, j2 in zip(jac1, jac2)])
-    result = result.sum(0)
+    result = result.sum(0).squeeze()
     return result
 
 def fnet_single(params, x):
@@ -105,11 +132,11 @@ def fnet_single(params, x):
 if __name__ == '__main__':
     # Hyperparameters
     # adaptive_activation = 'GAAF'
-    # adaptive_activation = 'L-LAAF'
+    adaptive_activation = 'L-LAAF'
     # adaptive_activation = 'N-LAAF'
-    adaptive_activation = 'NONE'
+    # adaptive_activation = 'NONE'
     is_fourier_layer_trainable = True
-    is_compute_ntk = False
+    is_compute_ntk = True
     sigma = 1
     scaling_factor = 10
     lr = 2e-4
@@ -123,7 +150,7 @@ if __name__ == '__main__':
         return 0.3*sin(3*x) if x <= 0 else 1+0.1*x*cos(30*x)
         
     # Training data
-    x_train = (torch.rand(train_size)*6 - 3).unsqueeze(-1).to(device)
+    x_train = (torch.linspace(-3, 3, train_size)).unsqueeze(-1).to(device)
     y_train = torch.tensor([u(x) for x in x_train]).unsqueeze(-1).to(device)
 
     # Testing data
@@ -155,12 +182,10 @@ if __name__ == '__main__':
 
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
     
-    fnet, params = make_functional(net)
-    
     # Logger
     loss_res_log = []
     l2_error_log = []
-    ntk_log = []
+    K_rr_log = []
     A1_log = []
 
     # Train
@@ -193,7 +218,7 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-        if steps % 100 == 0:
+        if steps % 100 == 0 or steps == 10:
             net.eval()
             elapsed = time.time() - start_time
             l2_error = torch.linalg.norm(y_test - net(x_test), 2) / torch.linalg.norm(y_test, 2)
@@ -205,12 +230,15 @@ if __name__ == '__main__':
             l2_error_log.append(l2_error.item())
 
             if is_compute_ntk:
-                result_ntk = empirical_ntk(fnet_single, params, x_train, x_train, 'trace')
-                ntk_log.append(result_ntk)
+                fnet, params = make_functional(net)
+                # spectrum = empirical_ntk(fnet_single, params, x_train, x_train, 'trace')
+
+                J_r = compute_jac(net_r, params, x_train)
+                K_rr_value = compute_ntk(J_r, J_r, 'full').detach().cpu().numpy()
+                K_rr_log.append(K_rr_value)
             
             start_time = time.time()
             scheduler.step()
-
 
     # Plot
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
@@ -242,9 +270,9 @@ if __name__ == '__main__':
     if is_compute_ntk:
         # Create loggers for the eigenvalues of the NTK
         lambda_K_log = []
-        for K in ntk_log:
+        for K in K_rr_log:
             # Compute eigenvalues
-            lambda_K, eigvec_K = np.linalg.eig(K.detach().cpu().numpy())
+            lambda_K, eigvec_K = np.linalg.eig(K)
             
             # Sort in descresing order
             lambda_K = np.sort(np.real(lambda_K))[::-1]
@@ -254,13 +282,13 @@ if __name__ == '__main__':
 
         # Eigenvalues of NTK
         fig, ax = plt.subplots(figsize=(6, 5))
-        ax.plot(lambda_K_log[0], label = 'n=0')
-        ax.plot(lambda_K_log[-1], '--', label = 'n=40,000')
+        ax.plot(lambda_K_log[0], label = 'n=10')
+        ax.plot(lambda_K_log[-1], '--', label = f'n={epochs}')
         plt.xscale('log')
         plt.yscale('log')
         ax.set_xlabel('index')
-        ax.set_ylabel(r'$\lambda_{uu}$')
-        ax.set_title(r'Eigenvalues of ${K}_{uu}$')
+        ax.set_ylabel(r'$\lambda_{rr}$')
+        ax.set_title(r'Eigenvalues of ${K}_{rr}$')
         ax.legend()
         plt.show()
 
@@ -275,20 +303,19 @@ if __name__ == '__main__':
         axs[1, 2].plot(X_u, np.real(eigvec_K[:,5]))
         plt.show()
 
-        # Visualize the eigenvalues of the NTK
-        fig, ax = plt.subplots(figsize=(6, 5))
-        ax.plot(lambda_K_log[0], label=r'$\sigma={}$'.format(sigma))
-        plt.xscale('log')
-        plt.yscale('log')
-        ax.set_xlabel('index')
-        ax.set_ylabel(r'$\lambda$') 
-        ax.set_title('Spectrum')
-        plt.legend()
-        plt.show()
-
-        fig, ax = plt.subplots(figsize=(6, 5))
-        ax.plot(100*np.arange(len(A1_log)), A1_log, label='A1', linewidth=2)
-        ax.set_xlabel('epochs')
-        ax.legend()
-        ax.grid(True)
+        # fig, ax = plt.subplots(figsize=(6, 5))
+        # ax.plot(100*np.arange(len(A1_log)), A1_log, label='A1', linewidth=2)
+        # ax.set_xlabel('epochs')
+        # ax.legend()
+        # ax.grid(True)
+        # plt.show()
+        # Change of the NTK
+        NTK_change_list = []
+        K0 = K_rr_log[0]
+        for K in K_rr_log:
+            diff = np.linalg.norm(K - K0) / np.linalg.norm(K0) 
+            NTK_change_list.append(diff)
+        fig, ax = plt.subplots(figsize=(6,5))
+        ax.plot(NTK_change_list)
+        ax.set_title('Change of the NTK')
         plt.show()
