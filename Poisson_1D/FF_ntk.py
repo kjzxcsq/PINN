@@ -61,7 +61,7 @@ def net_u(params, x):
     return fnet(params, x.unsqueeze(0)).squeeze(0)
 
 def net_r(params, x):
-    return hessian(fnet, argnums=1)(params, x).squeeze().unsqueeze(-1)
+    return hessian(fnet, argnums=1)(params, x).squeeze().unsqueeze(-1) / (0.288675)**2
 
 def empirical_ntk(fnet_single, params, x1, x2, compute='full'):
     # Compute J(x1)
@@ -124,10 +124,10 @@ if __name__ == '__main__':
     # Hyperparameters
     is_fourier_layer_trainable = True
     is_compute_ntk = True
-    sigma = 1
+    sigma = 10
     lr = 1e-3
     lr_n = 10
-    layer_sizes = [1] + [500] * 3 + [1]
+    layer_sizes = [1] + [100] * 4 + [1]
     train_size = 100
     epochs = 1000
 
@@ -163,6 +163,7 @@ if __name__ == '__main__':
     K_uu_log = []
     K_ur_log = []
     K_rr_log = []
+    spectrum_log = []
 
     # Computational domain
     bc1_coords = torch.tensor([[0.0], [0.0]])
@@ -225,13 +226,16 @@ if __name__ == '__main__':
 
                 J_u = compute_jac(net_u, params, X_u)
                 J_r = compute_jac(net_r, params, X_r)
+                J_spectrum = compute_jac(net_u, params, X_r)
                 K_uu_value = compute_ntk(J_u, J_u, 'full').detach().cpu().numpy()
                 K_ur_value = compute_ntk(J_u, J_r, 'full').detach().cpu().numpy()
                 K_rr_value = compute_ntk(J_r, J_r, 'full').detach().cpu().numpy()
+                spectrum = compute_ntk(J_spectrum, J_spectrum, 'full').detach().cpu().numpy()
 
                 K_uu_log.append(K_uu_value)
                 K_ur_log.append(K_ur_value)
                 K_rr_log.append(K_rr_value)
+                spectrum_log.append(spectrum)
             
             start_time = time.time()
             scheduler.step()
@@ -267,6 +271,8 @@ if __name__ == '__main__':
         # Create loggers for the eigenvalues of the NTK
         lambda_K_log = []
         K_list = []
+        lambda_spectrum_log = []
+        # spectrum_list = []
         for k in range(len(K_uu_log)):
             K_uu = K_uu_log[k]
             K_ur = K_ur_log[k]
@@ -285,6 +291,13 @@ if __name__ == '__main__':
             # Store eigenvalues
             lambda_K_log.append(lambda_K)
 
+
+            spectrum = spectrum_log[k]
+            # spectrum_list.append(spectrum)
+            lambda_spectrum, _ = np.linalg.eig(spectrum)
+            lambda_spectrum = np.sort(np.real(lambda_spectrum))[::-1]
+            lambda_spectrum_log.append(lambda_spectrum)
+
         # Eigenvalues of NTK
         fig, ax = plt.subplots(figsize=(6, 5))
         ax.plot(lambda_K_log[0], label = 'n=10')
@@ -294,6 +307,18 @@ if __name__ == '__main__':
         ax.set_xlabel('index')
         ax.set_ylabel(r'$\lambda$')
         ax.set_title(r'Eigenvalues of ${K}$')
+        ax.legend()
+        plt.show()
+
+        # Spectrum
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.plot(lambda_spectrum_log[0], label = 'n=10')
+        ax.plot(lambda_spectrum_log[-1], '--', label = 'n={:d}'.format(epochs))
+        plt.xscale('log')
+        plt.yscale('log')
+        ax.set_xlabel('index')
+        ax.set_ylabel(r'$\lambda$')
+        ax.set_title(r'spectrum')
         ax.legend()
         plt.show()
 

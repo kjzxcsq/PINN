@@ -132,16 +132,16 @@ def fnet_single(params, x):
 if __name__ == '__main__':
     # Hyperparameters
     # adaptive_activation = 'GAAF'
-    adaptive_activation = 'L-LAAF'
+    # adaptive_activation = 'L-LAAF'
     # adaptive_activation = 'N-LAAF'
-    # adaptive_activation = 'NONE'
+    adaptive_activation = 'NONE'
     is_fourier_layer_trainable = True
     is_compute_ntk = True
     sigma = 1
     scaling_factor = 10
     lr = 2e-4
     lr_n = 10
-    layer_sizes = [1] + [50] + [50] * 3 + [1]
+    layer_sizes = [1] + [100] + [100] * 3 + [1]
     train_size = 300
     epochs = 10000
 
@@ -264,7 +264,7 @@ if __name__ == '__main__':
     ax3.set_xlabel('epochs')
     ax3.legend()
     ax3.grid(True)
-    fig.savefig('./NonlinearDiscontinuous/plot/s{:d}_lr{:d}_{:s}'.format(sigma, lr_n, adaptive_activation))
+    # fig.savefig('./NonlinearDiscontinuous/plot/s{:d}_lr{:d}_{:s}'.format(sigma, lr_n, adaptive_activation))
     plt.show()
     
     if is_compute_ntk:
