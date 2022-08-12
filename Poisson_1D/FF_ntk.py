@@ -124,7 +124,7 @@ if __name__ == '__main__':
     # Hyperparameters
     is_fourier_layer_trainable = True
     is_compute_ntk = True
-    sigma = 10
+    sigma = 1
     lr = 1e-3
     lr_n = 10
     layer_sizes = [1] + [100] * 4 + [1]

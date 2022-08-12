@@ -133,21 +133,21 @@ if __name__ == '__main__':
     # Hyperparameters
     # adaptive_activation = 'GAAF'
     # adaptive_activation = 'L-LAAF'
-    # adaptive_activation = 'N-LAAF'
-    adaptive_activation = 'NONE'
+    adaptive_activation = 'N-LAAF'
+    # adaptive_activation = 'NONE'
     is_fourier_layer_trainable = True
     is_compute_ntk = True
     sigma = 1
     scaling_factor = 10
     lr = 2e-4
     lr_n = 10
-    layer_sizes = [1] + [100] + [100] * 3 + [1]
+    layer_sizes = [1] + [50] + [50] * 3 + [1]
     train_size = 300
-    epochs = 10000
+    epochs = 15000
 
     # Exact solution
     def u(x):
-        return 0.3*sin(3*x) if x <= 0 else 1+0.1*x*cos(30*x)
+        return 0.2*sin(6*x) if x <= 0 else 1+0.1*x*cos(18*x)
         
     # Training data
     x_train = (torch.linspace(-3, 3, train_size)).unsqueeze(-1).to(device)
@@ -185,7 +185,7 @@ if __name__ == '__main__':
     # Logger
     loss_res_log = []
     l2_error_log = []
-    K_rr_log = []
+    K_log = []
     A1_log = []
 
     # Train
@@ -233,9 +233,9 @@ if __name__ == '__main__':
                 fnet, params = make_functional(net)
                 # spectrum = empirical_ntk(fnet_single, params, x_train, x_train, 'trace')
 
-                J_r = compute_jac(net_r, params, x_train)
-                K_rr_value = compute_ntk(J_r, J_r, 'full').detach().cpu().numpy()
-                K_rr_log.append(K_rr_value)
+                J_r = compute_jac(net_u, params, x_train)
+                K_value = compute_ntk(J_r, J_r, 'full').detach().cpu().numpy()
+                K_log.append(K_value)
             
             start_time = time.time()
             scheduler.step()
@@ -251,8 +251,6 @@ if __name__ == '__main__':
     ax1.legend()
     ax1.grid(True)
 
-    # ax2.ticklabel_format(style='sci', scilimits=(0, 0), axis='y')
-    plt.yscale('log')
     ax2.plot(x_test.detach().cpu().numpy(), y_test.detach().cpu().numpy() - net(x_test).detach().cpu().numpy(), linewidth=2)
     ax2.set_xlabel('x')
     ax2.set_ylabel('Point-wise error')
@@ -270,7 +268,7 @@ if __name__ == '__main__':
     if is_compute_ntk:
         # Create loggers for the eigenvalues of the NTK
         lambda_K_log = []
-        for K in K_rr_log:
+        for K in K_log:
             # Compute eigenvalues
             lambda_K, eigvec_K = np.linalg.eig(K)
             
@@ -279,17 +277,29 @@ if __name__ == '__main__':
             
             # Store eigenvalues
             lambda_K_log.append(lambda_K)
+        
+
+        # Change of the NTK
+        NTK_change_list = []
+        K0 = K_log[0]
+        for K in K_log:
+            diff = np.linalg.norm(K - K0) / np.linalg.norm(K0) 
+            NTK_change_list.append(diff)
 
         # Eigenvalues of NTK
-        fig, ax = plt.subplots(figsize=(6, 5))
-        ax.plot(lambda_K_log[0], label = 'n=10')
-        ax.plot(lambda_K_log[-1], '--', label = f'n={epochs}')
-        plt.xscale('log')
-        plt.yscale('log')
-        ax.set_xlabel('index')
-        ax.set_ylabel(r'$\lambda_{rr}$')
-        ax.set_title(r'Eigenvalues of ${K}_{rr}$')
-        ax.legend()
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        ax1.plot(lambda_K_log[0], label = 'n=10')
+        ax1.plot(lambda_K_log[-1], '--', label = f'n={epochs}')
+        ax1.set_xscale('log')
+        ax1.set_yscale('log')
+        ax1.set_xlabel('index')
+        ax1.set_ylabel(r'$\lambda$')
+        ax1.set_title(r'Eigenvalues of ${K}$')
+        ax1.legend()
+
+        ax2.plot(NTK_change_list)
+        ax2.set_title('Change of the NTK')
+        # fig.savefig('./NonlinearDiscontinuous/plot/s{:d}_lr{:d}_{:s}_NTK'.format(sigma, lr_n, adaptive_activation))
         plt.show()
 
         # Visualize the eigenvectors of the NTK
@@ -309,13 +319,3 @@ if __name__ == '__main__':
         # ax.legend()
         # ax.grid(True)
         # plt.show()
-        # Change of the NTK
-        NTK_change_list = []
-        K0 = K_rr_log[0]
-        for K in K_rr_log:
-            diff = np.linalg.norm(K - K0) / np.linalg.norm(K0) 
-            NTK_change_list.append(diff)
-        fig, ax = plt.subplots(figsize=(6,5))
-        ax.plot(NTK_change_list)
-        ax.set_title('Change of the NTK')
-        plt.show()
